@@ -1,8 +1,10 @@
 package jinzo.worldy.client;
 
+import jinzo.worldy.client.commands.StafflistCommand;
 import me.shedaniel.autoconfig.AutoConfig;
 import me.shedaniel.autoconfig.serializer.JanksonConfigSerializer;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.text.Text;
@@ -17,6 +19,10 @@ public class WorldyClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         AutoConfig.register(WorldyConfig.class, JanksonConfigSerializer::new);
+
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
+            dispatcher.register(StafflistCommand.register());
+        });
 
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
             previousPlayers.clear();

@@ -1,24 +1,28 @@
 package jinzo.worldy.client.commands;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.text.HoverEvent;
 import net.minecraft.text.MutableText;
-import net.minecraft.text.Style;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
 import java.io.InputStream;
+import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.literal;
 
 public class StafflistCommand {
 
-    // Store UUID mapping for hover texts
-    private static Map<String, UUID> playerUuidMap = new HashMap<>();
+    // Cache voor UUID -> naam mapping om API calls te verminderen
+    private static final Map<UUID, String> uuidToNameCache = new ConcurrentHashMap<>();
+    private static final Map<String, UUID> playerUuidMap = new HashMap<>();
 
     public static LiteralArgumentBuilder<FabricClientCommandSource> register() {
         return literal("stafflist")
@@ -26,25 +30,19 @@ public class StafflistCommand {
                     MinecraftClient client = MinecraftClient.getInstance();
                     if (client.player == null) return 0;
 
-                    // Clear previous UUID mapping
                     playerUuidMap.clear();
 
-                    // Run in separate thread to avoid blocking the game
                     new Thread(() -> {
                         try {
-                            URL url = new URL("https://raw.githubusercontent.com/WorldMinecraft/server-patch/main/data/staff.json");
+                            URL url = new URL("https://raw.githubusercontent.com/pernio/Worldy/refs/heads/main/data/staff.json");
                             InputStream inputStream = url.openStream();
                             Scanner scanner = new Scanner(inputStream).useDelimiter("\\A");
                             String jsonContent = scanner.hasNext() ? scanner.next() : "";
                             scanner.close();
 
-                            // Parse JSON and get UUIDs
                             Map<String, List<UUID>> staffData = parseStaffJson(jsonContent);
-
-                            // Convert UUIDs to player names and store mapping
                             Map<String, List<StaffMember>> staffWithNames = convertUuidsToNames(staffData);
 
-                            // Send result back to main thread
                             client.execute(() -> {
                                 sendStaffList(client, staffWithNames);
                             });
@@ -56,9 +54,7 @@ public class StafflistCommand {
                         }
                     }).start();
 
-                    // Send loading message
                     client.player.sendMessage(Text.literal("§7Fetching staff list...").formatted(Formatting.GRAY), false);
-
                     return 1;
                 });
     }
@@ -67,11 +63,9 @@ public class StafflistCommand {
         Map<String, List<UUID>> staffData = new LinkedHashMap<>();
 
         try {
-            // Remove whitespace and brackets
             json = json.trim().replaceAll("\\s+", "");
             json = json.substring(1, json.length() - 1);
 
-            // Split by role sections
             String[] roles = json.split("(?<=\\]),");
 
             for (String roleSection : roles) {
@@ -85,10 +79,8 @@ public class StafflistCommand {
                         String[] uuidArray = playersStr.split(",");
                         for (String uuidStr : uuidArray) {
                             try {
-                                // Ensure UUID has hyphens
                                 String formattedUuid = uuidStr.trim();
                                 if (formattedUuid.length() == 32) {
-                                    // Add hyphens: 8-4-4-4-12
                                     formattedUuid = formattedUuid.substring(0, 8) + "-" +
                                             formattedUuid.substring(8, 12) + "-" +
                                             formattedUuid.substring(12, 16) + "-" +
@@ -101,14 +93,12 @@ public class StafflistCommand {
                             }
                         }
                     }
-
                     staffData.put(role, players);
                 }
             }
         } catch (Exception e) {
             throw new RuntimeException("Failed to parse JSON: " + e.getMessage());
         }
-
         return staffData;
     }
 
@@ -116,6 +106,7 @@ public class StafflistCommand {
         Map<String, List<StaffMember>> staffWithNames = new LinkedHashMap<>();
         MinecraftClient client = MinecraftClient.getInstance();
 
+        // Eerst online spelers checken
         for (Map.Entry<String, List<UUID>> entry : staffData.entrySet()) {
             String role = entry.getKey();
             List<UUID> uuids = entry.getValue();
@@ -125,21 +116,25 @@ public class StafflistCommand {
                 StaffMember member = getPlayerNameFromUuid(uuid, client);
                 staffMembers.add(member);
 
-                // Store UUID mapping for hover text
-                if (!member.displayName.startsWith("Unknown") && !member.displayName.startsWith("Error")) {
+                if (!member.isUnknown) {
                     playerUuidMap.put(member.displayName, uuid);
                 }
             }
 
             staffWithNames.put(role, staffMembers);
         }
-
         return staffWithNames;
     }
 
     private static StaffMember getPlayerNameFromUuid(UUID uuid, MinecraftClient client) {
         try {
-            // Method 1: Check if player is currently online
+            // Method 1: Check cache first
+            if (uuidToNameCache.containsKey(uuid)) {
+                String cachedName = uuidToNameCache.get(uuid);
+                return new StaffMember(cachedName, uuid, false);
+            }
+
+            // Method 2: Check if player is currently online
             if (client.getNetworkHandler() != null) {
                 var playerListEntry = client.getNetworkHandler().getPlayerList().stream()
                         .filter(entry -> entry.getProfile().getId().equals(uuid))
@@ -147,16 +142,58 @@ public class StafflistCommand {
 
                 if (playerListEntry.isPresent()) {
                     String playerName = playerListEntry.get().getProfile().getName();
+                    uuidToNameCache.put(uuid, playerName);
                     return new StaffMember(playerName, uuid, false);
                 }
             }
 
-            // Return unknown with UUID info
+            // Method 3: Use Mojang API to get username from UUID
+            String playerName = fetchUsernameFromMojang(uuid);
+            if (playerName != null) {
+                uuidToNameCache.put(uuid, playerName);
+                return new StaffMember(playerName, uuid, false);
+            }
+
+            // Method 4: Return unknown as last resort
             return new StaffMember("Unknown (" + uuid.toString().substring(0, 8) + "...)", uuid, true);
 
         } catch (Exception e) {
             return new StaffMember("Error (" + uuid.toString().substring(0, 8) + "...)", uuid, true);
         }
+    }
+
+    private static String fetchUsernameFromMojang(UUID uuid) {
+        try {
+            // Mojang API endpoint voor UUID -> username
+            URL url = new URL("https://sessionserver.mojang.com/session/minecraft/profile/" + uuid.toString().replace("-", ""));
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(5000);
+            connection.setReadTimeout(5000);
+
+            int responseCode = connection.getResponseCode();
+            if (responseCode == 200) {
+                InputStream inputStream = connection.getInputStream();
+                Scanner scanner = new Scanner(inputStream).useDelimiter("\\A");
+                String jsonResponse = scanner.hasNext() ? scanner.next() : "";
+                scanner.close();
+
+                // Parse JSON response
+                JsonObject jsonObject = JsonParser.parseString(jsonResponse).getAsJsonObject();
+                if (jsonObject.has("name")) {
+                    return jsonObject.get("name").getAsString();
+                }
+            } else if (responseCode == 204) {
+                System.out.println("No content found for UUID: " + uuid);
+            } else {
+                System.out.println("Mojang API returned: " + responseCode + " for UUID: " + uuid);
+            }
+
+            connection.disconnect();
+        } catch (Exception e) {
+            System.err.println("Error fetching from Mojang API for UUID " + uuid + ": " + e.getMessage());
+        }
+        return null;
     }
 
     private static void sendStaffList(MinecraftClient client, Map<String, List<StaffMember>> staffData) {
@@ -168,66 +205,73 @@ public class StafflistCommand {
         client.player.sendMessage(Text.literal("§6=== Staff List ===").formatted(Formatting.GOLD), false);
 
         boolean hasUnknownPlayers = false;
+        boolean hasOfflinePlayers = false;
 
         for (Map.Entry<String, List<StaffMember>> entry : staffData.entrySet()) {
             String role = entry.getKey();
             List<StaffMember> staffMembers = entry.getValue();
 
-            if (staffMembers.isEmpty()) {
-                continue;
-            }
+            if (staffMembers.isEmpty()) continue;
 
-            // Capitalize role name for display
             String displayRole = role.substring(0, 1).toUpperCase() + role.substring(1);
-
-            // Create message with hoverable player names
             MutableText roleMessage = createRoleMessage(displayRole, staffMembers);
             client.player.sendMessage(roleMessage, false);
 
-            // Check for unknown players
             if (staffMembers.stream().anyMatch(member -> member.isUnknown)) {
                 hasUnknownPlayers = true;
             }
+            if (staffMembers.stream().anyMatch(member -> !isPlayerOnline(member.displayName, client))) {
+                hasOfflinePlayers = true;
+            }
         }
 
-        // Show total count
         int totalStaff = staffData.values().stream().mapToInt(List::size).sum();
         client.player.sendMessage(Text.literal("§7Total staff members: §b" + totalStaff).formatted(Formatting.GRAY), false);
 
         if (hasUnknownPlayers) {
-            client.player.sendMessage(Text.literal("§cNote: Some staff members are not currently online").formatted(Formatting.RED), false);
+            client.player.sendMessage(Text.literal("§cNote: Could not resolve some usernames").formatted(Formatting.RED), false);
+        } else if (hasOfflinePlayers) {
+            client.player.sendMessage(Text.literal("§eNote: Some staff members are currently offline").formatted(Formatting.YELLOW), false);
         }
+    }
+
+    private static boolean isPlayerOnline(String playerName, MinecraftClient client) {
+        if (client.getNetworkHandler() == null) return false;
+        return client.getNetworkHandler().getPlayerList().stream()
+                .anyMatch(entry -> entry.getProfile().getName().equals(playerName));
     }
 
     private static MutableText createRoleMessage(String displayRole, List<StaffMember> staffMembers) {
         MutableText baseMessage = Text.literal(displayRole + ": ").formatted(Formatting.YELLOW);
+        MinecraftClient client = MinecraftClient.getInstance();
 
         for (int i = 0; i < staffMembers.size(); i++) {
             StaffMember member = staffMembers.get(i);
-
-            // Create hover text with UUID information
-            MutableText playerText = createHoverablePlayerText(member);
+            MutableText playerText = createHoverablePlayerText(member, client);
 
             if (i > 0) {
                 baseMessage.append(Text.literal(", ").formatted(Formatting.GRAY));
             }
-
             baseMessage.append(playerText);
         }
-
         return baseMessage;
     }
 
-    private static MutableText createHoverablePlayerText(StaffMember member) {
-        Formatting color = member.isUnknown ? Formatting.RED : Formatting.GREEN;
-
-        // Create hover text showing the UUID
-        MutableText hoverText = Text.literal("UUID: " + member.uuid.toString()).formatted(Formatting.GRAY);
+    private static MutableText createHoverablePlayerText(StaffMember member, MinecraftClient client) {
+        boolean isOnline = isPlayerOnline(member.displayName, client);
+        Formatting color;
 
         if (member.isUnknown) {
-            hoverText.append(Text.literal("\nStatus: Offline/Unknown").formatted(Formatting.RED));
+            color = Formatting.RED;
         } else {
-            hoverText.append(Text.literal("\nStatus: Online").formatted(Formatting.GREEN));
+            color = isOnline ? Formatting.GREEN : Formatting.YELLOW;
+        }
+
+        MutableText hoverText = Text.literal("UUID: " + member.uuid.toString()).formatted(Formatting.GRAY);
+        hoverText.append(Text.literal("\nStatus: " + (isOnline ? "Online" : "Offline")).formatted(isOnline ? Formatting.GREEN : Formatting.YELLOW));
+
+        if (member.isUnknown) {
+            hoverText.append(Text.literal("\nNote: Username could not be resolved").formatted(Formatting.RED));
         }
 
         return Text.literal(member.displayName)
@@ -240,7 +284,6 @@ public class StafflistCommand {
                 );
     }
 
-    // Helper class to store staff member information
     private static class StaffMember {
         public final String displayName;
         public final UUID uuid;
