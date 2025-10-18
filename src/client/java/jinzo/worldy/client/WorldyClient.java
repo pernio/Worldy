@@ -7,6 +7,8 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.network.ServerInfo;
 import net.minecraft.text.Text;
 
 import java.util.HashSet;
@@ -18,43 +20,48 @@ public class WorldyClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        AutoConfig.register(WorldyConfig.class, JanksonConfigSerializer::new);
+        MinecraftClient minecraftClient = MinecraftClient.getInstance();
+        ServerInfo currentServer = minecraftClient.getCurrentServerEntry();
 
-        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
-            dispatcher.register(StafflistCommand.register());
-        });
+        if (currentServer != null && currentServer.address.endsWith("worldmc.org")) {
+            AutoConfig.register(WorldyConfig.class, JanksonConfigSerializer::new);
 
-        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
-            previousPlayers.clear();
-            if (client.getNetworkHandler() != null) {
-                client.getNetworkHandler().getPlayerList().forEach(entry -> {
-                    previousPlayers.add(entry.getProfile().getName());
-                });
-            }
-        });
-
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
-            previousPlayers.clear();
-        });
-
-        ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            if (client.player == null || client.getNetworkHandler() == null) return;
-
-            Set<String> currentPlayers = new HashSet<>();
-
-            client.getNetworkHandler().getPlayerList().forEach(entry -> {
-                currentPlayers.add(entry.getProfile().getName());
+            ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
+                dispatcher.register(StafflistCommand.register());
             });
 
-            for (String playerName : previousPlayers) {
-                if (!currentPlayers.contains(playerName) && getConfig().displayLogoutMessages) {
-                    client.player.sendMessage(Text.literal("§7[§c-§7] " + playerName), false);
+            ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
+                previousPlayers.clear();
+                if (client.getNetworkHandler() != null) {
+                    client.getNetworkHandler().getPlayerList().forEach(entry -> {
+                        previousPlayers.add(entry.getProfile().getName());
+                    });
                 }
-            }
+            });
 
-            previousPlayers.clear();
-            previousPlayers.addAll(currentPlayers);
-        });
+            ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+                previousPlayers.clear();
+            });
+
+            ClientTickEvents.END_CLIENT_TICK.register(client -> {
+                if (client.player == null || client.getNetworkHandler() == null) return;
+
+                Set<String> currentPlayers = new HashSet<>();
+
+                client.getNetworkHandler().getPlayerList().forEach(entry -> {
+                    currentPlayers.add(entry.getProfile().getName());
+                });
+
+                for (String playerName : previousPlayers) {
+                    if (!currentPlayers.contains(playerName) && getConfig().displayLogoutMessages) {
+                        client.player.sendMessage(Text.literal("§7[§c-§7] " + playerName), false);
+                    }
+                }
+
+                previousPlayers.clear();
+                previousPlayers.addAll(currentPlayers);
+            });
+        }
     }
 
     public static WorldyConfig getConfig() {
