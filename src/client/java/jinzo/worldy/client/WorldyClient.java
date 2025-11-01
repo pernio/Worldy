@@ -1,7 +1,9 @@
 package jinzo.worldy.client;
 
 import jinzo.worldy.client.commands.StafflistCommand;
+import jinzo.worldy.client.commands.WaypointCommand;
 import jinzo.worldy.client.utils.StafflistHelper;
+import jinzo.worldy.client.utils.WaypointManager;
 import me.shedaniel.autoconfig.AutoConfig;
 import me.shedaniel.autoconfig.serializer.JanksonConfigSerializer;
 import net.fabricmc.api.ClientModInitializer;
@@ -26,6 +28,7 @@ public class WorldyClient implements ClientModInitializer {
 
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
             dispatcher.register(StafflistCommand.register());
+            WaypointCommand.register();
         });
 
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
@@ -69,6 +72,8 @@ public class WorldyClient implements ClientModInitializer {
 
             previousPlayers.clear();
             previousPlayers.addAll(currentPlayers);
+
+            if (WaypointManager.isActive()) WaypointManager.spawnPathParticles(10);
         });
 
         MinecraftClient mc = MinecraftClient.getInstance();
