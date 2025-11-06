@@ -2,11 +2,14 @@ package jinzo.worldy.client.utils;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.gson.stream.JsonReader;
 import jinzo.worldy.client.Models.Staff;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.text.Text;
 
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.StringReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.time.Instant;
@@ -19,7 +22,9 @@ public final class StafflistHelper {
 
     private static final Map<UUID, String> uuidToNameCache = new ConcurrentHashMap<>();
     private static final Map<String, UUID> playerUuidMap = new ConcurrentHashMap<>();
-    private static final Map<String, List<Staff>> cachedStaffData = new ConcurrentHashMap<>();
+    // Preserve insertion order and provide basic thread-safety for single operations + synchronized iteration
+    private static final Map<String, List<Staff>> cachedStaffData =
+            Collections.synchronizedMap(new LinkedHashMap<>());
 
     private static final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "worldy-staffloader");
@@ -34,8 +39,10 @@ public final class StafflistHelper {
 
     public static Map<String, List<Staff>> getCachedStaffData() {
         Map<String, List<Staff>> snapshot = new LinkedHashMap<>();
-        for (var e : cachedStaffData.entrySet()) {
-            snapshot.put(e.getKey(), Collections.unmodifiableList(e.getValue()));
+        synchronized (cachedStaffData) {
+            for (var e : cachedStaffData.entrySet()) {
+                snapshot.put(e.getKey(), Collections.unmodifiableList(e.getValue()));
+            }
         }
         return Collections.unmodifiableMap(snapshot);
     }
@@ -76,8 +83,10 @@ public final class StafflistHelper {
                         temp.put(role, Collections.unmodifiableList(members));
                     }
 
-                    cachedStaffData.clear();
-                    cachedStaffData.putAll(temp);
+                    synchronized (cachedStaffData) {
+                        cachedStaffData.clear();
+                        cachedStaffData.putAll(temp);
+                    }
 
                     resolveUnknownNamesAsync(client, staffData);
 
@@ -93,14 +102,15 @@ public final class StafflistHelper {
 
     private static Map<String, List<UUID>> parseStaffJson(String json) {
         Map<String, List<UUID>> staffData = new LinkedHashMap<>();
-        try {
-            json = json.trim();
-            JsonObject root = JsonParser.parseString(json).getAsJsonObject();
-            for (String role : root.keySet()) {
-                var arr = root.getAsJsonArray(role);
+        try (JsonReader reader = new JsonReader(new StringReader(json))) {
+            reader.setLenient(true);
+            reader.beginObject();
+            while (reader.hasNext()) {
+                String role = reader.nextName();
                 List<UUID> uuids = new ArrayList<>();
-                for (var el : arr) {
-                    String uuidStr = el.getAsString().trim();
+                reader.beginArray();
+                while (reader.hasNext()) {
+                    String uuidStr = reader.nextString().trim();
                     try {
                         String formattedUuid = uuidStr;
                         if (formattedUuid.length() == 32) {
@@ -115,9 +125,11 @@ public final class StafflistHelper {
                         System.err.println("Invalid UUID in staff.json: " + uuidStr);
                     }
                 }
+                reader.endArray();
                 staffData.put(role, uuids);
             }
-        } catch (Exception e) {
+            reader.endObject();
+        } catch (IOException e) {
             throw new RuntimeException("Failed to parse JSON: " + e.getMessage(), e);
         }
         return staffData;
@@ -164,8 +176,10 @@ public final class StafflistHelper {
                 }
                 resolved.put(entry.getKey(), Collections.unmodifiableList(list));
             }
-            cachedStaffData.clear();
-            cachedStaffData.putAll(resolved);
+            synchronized (cachedStaffData) {
+                cachedStaffData.clear();
+                cachedStaffData.putAll(resolved);
+            }
         });
     }
 

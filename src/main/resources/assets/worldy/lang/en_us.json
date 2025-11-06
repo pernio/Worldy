@@ -1,7 +1,18 @@
 {
   "text.autoconfig.worldy.title": "Worldy Configuration",
-  "text.autoconfig.worldy.option.displayLogoutMessages": "Player logout messages",
+
+  "text.autoconfig.worldy.option.general": "General settings",
+  "text.autoconfig.worldy.option.general.displayLogoutMessages": "Player logout messages",
+  "text.autoconfig.worldy.option.general.displayLogoutMessages.@Tooltip": "Shows a system message when players log out.",
+
   "text.autoconfig.worldy.option.waypoint": "Waypoint settings",
   "text.autoconfig.worldy.option.waypoint.enabled": "Enabled",
-  "text.autoconfig.worldy.option.waypoint.pathLength": "Path length"
+  "text.autoconfig.worldy.option.waypoint.enabled.@Tooltip": "Enables waypoint feature.",
+
+  "text.autoconfig.worldy.option.waypoint.pathLength": "Path length",
+  "text.autoconfig.worldy.option.waypoint.pathLength.@Tooltip": "Maximum number of waypoint trail segments.",
+
+  "text.autoconfig.worldy.option.waypoint.lastDeathX": "Last death X position",
+  "text.autoconfig.worldy.option.waypoint.lastDeathY": "Last death Y position",
+  "text.autoconfig.worldy.option.waypoint.lastDeathZ": "Last death Z position"
 }

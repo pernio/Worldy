@@ -1,15 +1,20 @@
 package jinzo.worldy.client.utils;
 
+import com.google.gson.Gson;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.util.math.Vec3d;
+import me.shedaniel.autoconfig.AutoConfig;
+import jinzo.worldy.client.WorldyConfig;
 
 public class WaypointManager {
-    private static Vec3d target = null;
-    private static boolean active = false;
+    private static volatile Vec3d target = null;
+    private static volatile boolean active = false;
 
-    private static int tickCounter = 0;
+    private static volatile int tickCounter = 0;
+
+    private WaypointManager() {}
 
     public static void setWaypoint(Vec3d t) {
         target = t;
@@ -21,6 +26,10 @@ public class WaypointManager {
         target = null;
         active = false;
         tickCounter = 0;
+    }
+
+    public static Vec3d getWaypoint() {
+        return target;
     }
 
     public static boolean isActive() {
@@ -57,6 +66,28 @@ public class WaypointManager {
         if (distance <= steps * spacing + 0.5) {
             world.addParticle(ParticleTypes.SOUL_FIRE_FLAME,
                     target.x, target.y + 0.1, target.z, 0.0, 0.02, 0.0);
+        }
+    }
+
+    public static void setLastDeath(Vec3d deathPos) {
+        if (deathPos == null) return;
+        saveLastDeathToConfig(deathPos);
+    }
+
+    public static Vec3d getLastDeath() {
+        WorldyConfig cfg = AutoConfig.getConfigHolder(WorldyConfig.class).getConfig();
+        return new Vec3d(cfg.waypoint.lastDeathX, cfg.waypoint.lastDeathY, cfg.waypoint.lastDeathZ);
+    }
+
+    private static void saveLastDeathToConfig(Vec3d deathPos) {
+        try {
+            WorldyConfig cfg = AutoConfig.getConfigHolder(WorldyConfig.class).getConfig();
+            cfg.waypoint.lastDeathX = (int)deathPos.x;
+            cfg.waypoint.lastDeathY = (int)deathPos.y;
+            cfg.waypoint.lastDeathZ = (int)deathPos.z;
+            AutoConfig.getConfigHolder(WorldyConfig.class).save();
+        } catch (Throwable t) {
+            System.err.println("Failed to save last death to config: " + t.getMessage());
         }
     }
 }

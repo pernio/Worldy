@@ -18,12 +18,16 @@ public class WorldyConfig implements ConfigData {
     }
 
     public static class WaypointSettings {
-        @ConfigEntry.Gui.Tooltip(count = 2)
+        @ConfigEntry.Gui.Tooltip
         public boolean enabled = true;
 
-        @ConfigEntry.Gui.Tooltip(count = 3)
+        @ConfigEntry.Gui.Tooltip
         @ConfigEntry.BoundedDiscrete(min = 1, max = 40)
         public int pathLength = 10;
+
+        public double lastDeathX = 0;
+        public double lastDeathY = 0;
+        public double lastDeathZ = 0;
     }
 
     @Override
