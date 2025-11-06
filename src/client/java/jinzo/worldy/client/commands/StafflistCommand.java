@@ -5,6 +5,7 @@ import jinzo.worldy.client.Models.Staff;
 import jinzo.worldy.client.utils.StafflistHelper;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.text.ClickEvent;
 import net.minecraft.text.HoverEvent;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
@@ -121,12 +122,19 @@ public final class StafflistCommand {
             hoverText.append(Text.literal("\nNote: Username could not be resolved").formatted(Formatting.RED));
         }
 
-        return Text.literal(member.getDisplayName())
+        String playerName = member.getDisplayName();
+        String runCommand = "/res " + playerName;
+
+        return Text.literal(playerName)
                 .styled(style -> style
                         .withColor(color)
                         .withHoverEvent(new HoverEvent(
                                 HoverEvent.Action.SHOW_TEXT,
                                 hoverText
+                        ))
+                        .withClickEvent(new ClickEvent(
+                                ClickEvent.Action.RUN_COMMAND,
+                                runCommand
                         ))
                 );
     }
