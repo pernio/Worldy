@@ -1,6 +1,5 @@
 package jinzo.worldy.client.utils;
 
-import com.google.gson.Gson;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.particle.ParticleTypes;
@@ -60,11 +59,11 @@ public class WaypointManager {
             double py = start.y + unit.y * i * spacing;
             double pz = start.z + unit.z * i * spacing;
 
-            world.addParticle(ParticleTypes.CRIT, px, py, pz, 0.0, 0.01, 0.0);
+            world.addParticleClient(ParticleTypes.CRIT, px, py, pz, 0.0, 0.01, 0.0);
         }
 
         if (distance <= steps * spacing + 0.5) {
-            world.addParticle(ParticleTypes.SOUL_FIRE_FLAME,
+            world.addParticleClient(ParticleTypes.SOUL_FIRE_FLAME,
                     target.x, target.y + 0.1, target.z, 0.0, 0.02, 0.0);
         }
     }

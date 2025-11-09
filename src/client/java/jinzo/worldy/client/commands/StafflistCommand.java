@@ -128,14 +128,8 @@ public final class StafflistCommand {
         return Text.literal(playerName)
                 .styled(style -> style
                         .withColor(color)
-                        .withHoverEvent(new HoverEvent(
-                                HoverEvent.Action.SHOW_TEXT,
-                                hoverText
-                        ))
-                        .withClickEvent(new ClickEvent(
-                                ClickEvent.Action.RUN_COMMAND,
-                                runCommand
-                        ))
+                        .withHoverEvent(new HoverEvent.ShowText(hoverText))
+                        .withClickEvent(new ClickEvent.RunCommand(runCommand))
                 );
     }
 
