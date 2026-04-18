@@ -32,7 +32,7 @@ public class WorldyConfig implements ConfigData {
 
     public static class FetchSettings {
         public boolean fetchUrlsOnLogin = true;
-        public String stafflistDataUrl = "https://raw.githubusercontent.com/pernio/Worldy/refs/heads/main/data/staff.json";
+        public String apiUrl = "https://api.worldmc.org/v0/alpha/";
         public String rulesDataUrl = "https://raw.githubusercontent.com/pernio/Worldy/refs/heads/main/data/rules.json";
     }
 

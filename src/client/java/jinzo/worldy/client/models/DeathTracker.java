@@ -27,14 +27,14 @@ public final class DeathTracker {
                 Vec3d pos = new Vec3d(client.player.getX(), client.player.getY(), client.player.getZ());
                 lastKnownPos = pos;
 
-                boolean isAliveNow = !client.player.isDead() && client.player.getHealth() > 0.0F;
+                boolean aliveNow = !client.player.isDead() && client.player.getHealth() > 0.0F;
 
-                if (wasAlive && !isAliveNow) {
+                if (wasAlive && !aliveNow) {
                     Vec3d deathPos = (lastKnownPos != null) ? lastKnownPos : pos;
                     WaypointManager.setLastDeath(deathPos);
                 }
 
-                wasAlive = isAliveNow;
+                wasAlive = aliveNow;
             } catch (Throwable t) {
                 t.printStackTrace();
             }

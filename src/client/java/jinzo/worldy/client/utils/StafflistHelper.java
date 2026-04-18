@@ -1,16 +1,15 @@
 package jinzo.worldy.client.utils;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.google.gson.stream.JsonReader;
 import jinzo.worldy.client.models.Staff;
 import jinzo.worldy.client.WorldyClient;
 import net.minecraft.client.MinecraftClient;
 import org.jetbrains.annotations.NotNull;
 
-import java.io.IOException;
 import java.io.InputStream;
-import java.io.StringReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.time.Instant;
@@ -18,10 +17,6 @@ import java.util.*;
 import java.util.concurrent.*;
 
 public final class StafflistHelper {
-
-    private static final Map<UUID, String> uuidToNameCache = new ConcurrentHashMap<>();
-    private static final Map<String, UUID> playerUuidMap = new ConcurrentHashMap<>();
-    // Preserve insertion order and provide basic thread-safety for single operations + synchronized iteration
     private static final Map<String, List<Staff>> cachedStaffData =
             Collections.synchronizedMap(new LinkedHashMap<>());
 
@@ -31,12 +26,21 @@ public final class StafflistHelper {
         return t;
     });
 
-    private static volatile boolean isLoading = false;
+    private static volatile boolean loading = false;
     private static volatile Instant lastFetched = Instant.EPOCH;
+    private static volatile FetchState fetchState = FetchState.NOT_LOADED;
 
     private StafflistHelper() {}
 
-    public static @NotNull Map<String, List<Staff>> getCachedStaffData() {
+    public enum FetchState {
+        NOT_LOADED,
+        LOADING,
+        READY,
+        EMPTY,
+        UNAVAILABLE
+    }
+
+    public static @NotNull Map<String, List<Staff>> cachedStaffData() {
         Map<String, List<Staff>> snapshot = new LinkedHashMap<>();
         synchronized (cachedStaffData) {
             for (var e : cachedStaffData.entrySet()) {
@@ -46,170 +50,98 @@ public final class StafflistHelper {
         return Collections.unmodifiableMap(snapshot);
     }
 
+    public static @NotNull FetchState getFetchState() {
+        return fetchState;
+    }
+
     public static void loadStaffListOnJoin(@NotNull MinecraftClient client) {
-        if (isLoading) return;
+        if (loading) return;
         if (lastFetched.plusSeconds(60 * 5).isAfter(Instant.now()) && !cachedStaffData.isEmpty()) return;
 
-        isLoading = true;
+        loading = true;
+        fetchState = FetchState.LOADING;
         executor.submit(() -> {
             HttpURLConnection conn = null;
             try {
-                URL url = new URL(WorldyClient.getConfig().fetch.stafflistDataUrl);
+                URL url = new URL(WorldyClient.getConfig().fetch.apiUrl + "player/staff/list");
                 conn = (HttpURLConnection) url.openConnection();
                 conn.setConnectTimeout(5000);
                 conn.setReadTimeout(5000);
                 conn.setRequestMethod("GET");
+                conn.setRequestProperty("Accept", "application/json");
+
+                int responseCode = conn.getResponseCode();
+                if (responseCode < 200 || responseCode >= 300) {
+                    clearCachedStaffData();
+                    fetchState = FetchState.UNAVAILABLE;
+                    return;
+                }
 
                 try (InputStream inputStream = conn.getInputStream();
                      Scanner scanner = new Scanner(inputStream).useDelimiter("\\A")) {
                     String jsonContent = scanner.hasNext() ? scanner.next() : "";
-                    Map<String, List<UUID>> staffData = parseStaffJson(jsonContent);
-
-                    Map<String, List<Staff>> temp = new LinkedHashMap<>();
-                    for (Map.Entry<String, List<UUID>> entry : staffData.entrySet()) {
-                        String role = entry.getKey();
-                        List<UUID> uuids = entry.getValue();
-                        List<Staff> members = new ArrayList<>();
-                        for (UUID id : uuids) {
-                            String maybeName = uuidToNameCache.get(id);
-                            Staff s = (maybeName != null)
-                                    ? new Staff(maybeName, id, false)
-                                    : new Staff("Unknown (" + id.toString().substring(0, 8) + "...)",
-                                    id, true);
-                            members.add(s);
-                            if (!s.isUnknown()) playerUuidMap.put(s.getDisplayName(), id);
-                        }
-                        temp.put(role, Collections.unmodifiableList(members));
+                    if (jsonContent.isBlank()) {
+                        clearCachedStaffData();
+                        fetchState = FetchState.EMPTY;
+                        return;
                     }
+
+                    Map<String, List<Staff>> temp = parseStaffJson(jsonContent);
 
                     synchronized (cachedStaffData) {
                         cachedStaffData.clear();
                         cachedStaffData.putAll(temp);
                     }
 
-                    resolveUnknownNamesAsync(client, staffData);
-
+                    fetchState = temp.isEmpty() ? FetchState.EMPTY : FetchState.READY;
                     lastFetched = Instant.now();
                 }
             } catch (Exception ignored) {
+                clearCachedStaffData();
+                fetchState = FetchState.UNAVAILABLE;
             } finally {
                 if (conn != null) conn.disconnect();
-                isLoading = false;
+                loading = false;
             }
         });
     }
 
-    private static @NotNull Map<String, List<UUID>> parseStaffJson(@NotNull String json) {
-        Map<String, List<UUID>> staffData = new LinkedHashMap<>();
-        try (JsonReader reader = new JsonReader(new StringReader(json))) {
-            reader.setLenient(true);
-            reader.beginObject();
-            while (reader.hasNext()) {
-                String role = reader.nextName();
-                List<UUID> uuids = new ArrayList<>();
-                reader.beginArray();
-                while (reader.hasNext()) {
-                    String uuidStr = reader.nextString().trim();
-                    try {
-                        String formattedUuid = uuidStr;
-                        if (formattedUuid.length() == 32) {
-                            formattedUuid = formattedUuid.substring(0, 8) + "-" +
-                                    formattedUuid.substring(8, 12) + "-" +
-                                    formattedUuid.substring(12, 16) + "-" +
-                                    formattedUuid.substring(16, 20) + "-" +
-                                    formattedUuid.substring(20, 32);
-                        }
-                        uuids.add(UUID.fromString(formattedUuid));
-                    } catch (Exception ex) {
-                        System.err.println("Invalid UUID in staff.json: " + uuidStr);
-                    }
-                }
-                reader.endArray();
-                staffData.put(role, uuids);
-            }
-            reader.endObject();
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to parse JSON: " + e.getMessage(), e);
-        }
-        return staffData;
-    }
-
-    private static void resolveUnknownNamesAsync(@NotNull MinecraftClient client, Map<String, @NotNull List<UUID>> staffData) {
-        executor.submit(() -> {
-            for (Map.Entry<String, List<UUID>> entry : staffData.entrySet()) {
-                for (UUID uuid : entry.getValue()) {
-                    if (uuidToNameCache.containsKey(uuid)) continue;
-
-                    String maybe = null;
-                    if (client.getNetworkHandler() != null) {
-                        var found = client.getNetworkHandler().getPlayerList().stream()
-                                .filter(pl -> pl.getProfile().id().equals(uuid))
-                                .findFirst();
-                        if (found.isPresent()) {
-                            maybe = found.get().getProfile().name();
-                        }
-                    }
-
-                    if (maybe == null) {
-                        maybe = fetchUsernameFromMojang(uuid);
-                    }
-
-                    if (maybe != null) {
-                        uuidToNameCache.put(uuid, maybe);
-                        playerUuidMap.put(maybe, uuid);
-                    }
-                }
-            }
-
-            Map<String, List<Staff>> resolved = new LinkedHashMap<>();
-            for (var entry : staffData.entrySet()) {
-                List<Staff> list = new ArrayList<>();
-                for (UUID id : entry.getValue()) {
-                    String name = uuidToNameCache.get(id);
-                    if (name != null) {
-                        list.add(new Staff(name, id, false));
-                    } else {
-                        list.add(new Staff("Unknown (" + id.toString().substring(0, 8) + "...)",
-                                id, true));
-                    }
-                }
-                resolved.put(entry.getKey(), Collections.unmodifiableList(list));
-            }
-            synchronized (cachedStaffData) {
-                cachedStaffData.clear();
-                cachedStaffData.putAll(resolved);
-            }
-        });
-    }
-
-    private static @NotNull String fetchUsernameFromMojang(@NotNull UUID uuid) {
-        HttpURLConnection connection = null;
+    private static @NotNull Map<String, List<Staff>> parseStaffJson(@NotNull String json) {
+        Map<String, List<Staff>> staffData = new LinkedHashMap<>();
         try {
-            URL url = new URL("https://sessionserver.mojang.com/session/minecraft/profile/" + uuid.toString().replace("-", ""));
-            connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("GET");
-            connection.setConnectTimeout(5000);
-            connection.setReadTimeout(5000);
+            JsonArray array = JsonParser.parseString(json).getAsJsonArray();
+            for (JsonElement element : array) {
+                if (!element.isJsonObject()) continue;
 
-            int responseCode = connection.getResponseCode();
-            if (responseCode == 200) {
-                try (InputStream inputStream = connection.getInputStream();
-                     Scanner scanner = new Scanner(inputStream).useDelimiter("\\A")) {
-                    String jsonResponse = scanner.hasNext() ? scanner.next() : "";
-                    JsonObject jsonObject = JsonParser.parseString(jsonResponse).getAsJsonObject();
-                    if (jsonObject.has("name")) {
-                        return jsonObject.get("name").getAsString();
-                    }
-                }
-            } else {
-                System.out.println("Mojang API returned: " + responseCode + " for UUID: " + uuid);
+                JsonObject entry = element.getAsJsonObject();
+
+                String rank = entry.get("rank").getAsString().trim();
+                if (rank.isEmpty()) continue;
+
+                if (!entry.has("uuid")) continue;
+                String uuid = entry.get("uuid").getAsString();
+
+                if (!entry.has("name") || entry.get("name").isJsonNull()) continue;
+                String name = entry.get("name").getAsString().trim();
+                if (name.isEmpty()) continue;
+
+                staffData.computeIfAbsent(rank, ignored -> new ArrayList<>()).add(new Staff(name, uuid));
             }
-        } catch (Exception e) {
-            System.err.println("Error fetching from Mojang API for UUID " + uuid + ": " + e.getMessage());
-        } finally {
-            if (connection != null) connection.disconnect();
+        } catch (IllegalStateException e) {
+            throw new RuntimeException("Failed to parse staff response", e);
         }
-        return null;
+
+        Map<String, List<Staff>> immutableData = new LinkedHashMap<>();
+        for (Map.Entry<String, List<Staff>> entry : staffData.entrySet()) {
+            immutableData.put(entry.getKey(), Collections.unmodifiableList(entry.getValue()));
+        }
+        return immutableData;
+    }
+
+    private static void clearCachedStaffData() {
+        synchronized (cachedStaffData) {
+            cachedStaffData.clear();
+        }
     }
 
 }

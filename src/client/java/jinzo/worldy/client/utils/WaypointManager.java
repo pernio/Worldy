@@ -120,7 +120,7 @@ public class WaypointManager {
             lastDeathObj.addProperty("x", (int) deathPos.x);
             lastDeathObj.addProperty("y", (int) deathPos.y);
             lastDeathObj.addProperty("z", (int) deathPos.z);
-            lastDeathObj.addProperty("world", getSimpleWorldName());
+            lastDeathObj.addProperty("world", simpleWorldName());
 
             root.add("last_death", lastDeathObj);
 
@@ -145,7 +145,7 @@ public class WaypointManager {
             return 0;
         }
         String name = after.toLowerCase(); // allow spaces in name
-        String worldStr = getSimpleWorldName();
+        String worldStr = simpleWorldName();
 
         try {
             Map<String, WaypointEntry> waypoints = readWaypoints();
@@ -291,7 +291,7 @@ public class WaypointManager {
         }
     }
 
-    private static @NotNull String getSimpleWorldName() {
+    private static @NotNull String simpleWorldName() {
         ClientWorld world = MinecraftClient.getInstance().world;
         if (world == null) return "overworld";
         String key = world.getRegistryKey().getValue().toString().toLowerCase();

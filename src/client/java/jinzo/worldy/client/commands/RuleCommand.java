@@ -23,7 +23,7 @@ public class RuleCommand {
                                     .formatted(Formatting.GOLD, Formatting.BOLD)
                     );
 
-                    var rules = RuleHelper.getAllRules();
+                    var rules = RuleHelper.allRules();
                     if (rules.isEmpty()) {
                         CommandHelper.sendMessage("command.worldy.data.loading");
                         return 1;
@@ -44,7 +44,7 @@ public class RuleCommand {
                             int lastSpace = typed.lastIndexOf(' ');
                             if (lastSpace != -1) typed = typed.substring(lastSpace + 1);
 
-                            var rules = RuleHelper.getAllRules();
+                            var rules = RuleHelper.allRules();
                             for (var rule : rules) {
                                 if (rule.id.startsWith(typed)) {
                                     builder.suggest(rule.id);
@@ -56,7 +56,7 @@ public class RuleCommand {
                             String id = StringArgumentType.getString(ctx, "number");
                             RuleHelper.loadRulesAsync();
 
-                            RuleHelper.findRuleById(id).ifPresentOrElse(rule -> {
+                            RuleHelper.ruleById(id).ifPresentOrElse(rule -> {
                                 CommandHelper.sendMessage(
                                         Text.literal(rule.id + " - " + rule.title)
                                                 .formatted(Formatting.GOLD, Formatting.BOLD)

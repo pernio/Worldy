@@ -27,6 +27,7 @@
   "command.worldy.maphere.title": "Click here to open the map on your position.",
   "command.worldy.maphere.hover": "Opens Dynmap on your position",
   "command.worldy.stafflist.no_data": "No staff data found.",
+  "command.worldy.stafflist.api_unavailable": "Staff API is unavailable right now. Try again later.",
   "command.worldy.stafflist.title": "Staff List",
   "command.worldy.stafflist.total_staff": "Total staff members: ",
   "command.worldy.stafflist.online_staff": "%s online",

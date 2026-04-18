@@ -2,37 +2,27 @@ package jinzo.worldy.client.models;
 
 import org.jetbrains.annotations.NotNull;
 
-import java.util.UUID;
-
-public final class Staff {
-    private final String displayName;
-    private final UUID uuid;
-    private final boolean isUnknown;
-
-    public Staff(@NotNull String displayName, @NotNull UUID uuid, boolean isUnknown) {
-        this.displayName = displayName;
+public record Staff(String name, String uuid) {
+    public Staff(@NotNull String name, @NotNull String uuid) {
+        this.name = name;
         this.uuid = uuid;
-        this.isUnknown = isUnknown;
     }
 
-    public @NotNull String getDisplayName() {
-        return displayName;
+    @Override
+    public @NotNull String name() {
+        return name;
     }
 
-    public @NotNull UUID getUuid() {
+    @Override
+    public @NotNull String uuid() {
         return uuid;
-    }
-
-    public boolean isUnknown() {
-        return isUnknown;
     }
 
     @Override
     public @NotNull String toString() {
         return "Staff{" +
-                "displayName='" + displayName + '\'' +
-                ", uuid=" + uuid +
-                ", isUnknown=" + isUnknown +
+                "name='" + name + '\'' +
+                "uuid='" + uuid + '\'' +
                 '}';
     }
 }

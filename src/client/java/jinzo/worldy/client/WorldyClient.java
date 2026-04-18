@@ -33,9 +33,6 @@ public class WorldyClient implements ClientModInitializer {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
             registerCommand(dispatcher,
                     StafflistCommand.register(),
-                    GlobalCommand.register(),
-                    LocalCommand.register(),
-                    LocalCommand.registerAlias(),
                     SpawnTownCommand.register(),
                     SpawnTownCommand.registerAlias(),
                     SpawnNationCommand.register(),

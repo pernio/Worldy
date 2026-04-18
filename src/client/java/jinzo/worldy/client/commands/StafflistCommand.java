@@ -25,10 +25,19 @@ public final class StafflistCommand {
                     MinecraftClient client = MinecraftClient.getInstance();
                     if (client.player == null) return 0;
 
-                    Map<String, List<Staff>> data = StafflistHelper.getCachedStaffData();
+                    Map<String, List<Staff>> data = StafflistHelper.cachedStaffData();
                     if (data.isEmpty()) {
-                        CommandHelper.sendMessage("command.worldy.data.loading");
-                        StafflistHelper.loadStaffListOnJoin(client);
+                        StafflistHelper.FetchState state = StafflistHelper.getFetchState();
+                        if (state == StafflistHelper.FetchState.NOT_LOADED) {
+                            CommandHelper.sendMessage("command.worldy.data.loading");
+                            StafflistHelper.loadStaffListOnJoin(client);
+                        } else if (state == StafflistHelper.FetchState.LOADING) {
+                            CommandHelper.sendMessage("command.worldy.data.loading");
+                        } else if (state == StafflistHelper.FetchState.UNAVAILABLE) {
+                            CommandHelper.sendError("command.worldy.stafflist.api_unavailable");
+                        } else {
+                            CommandHelper.sendError("command.worldy.stafflist.no_data");
+                        }
                         return 1;
                     }
 
@@ -46,26 +55,21 @@ public final class StafflistCommand {
 
         if (client.player != null)
             CommandHelper.sendMessage(Text.translatable("command.worldy.stafflist.title").formatted(Formatting.GOLD, Formatting.BOLD));
-
-        boolean hasUnknownPlayers = false;
-
         for (Map.Entry<String, List<Staff>> entry : staffData.entrySet()) {
             String role = entry.getKey();
             List<Staff> staffMembers = entry.getValue();
 
             if (staffMembers.isEmpty()) continue;
 
-            String displayRole = role.substring(0, 1).toUpperCase() + role.substring(1);
+            String displayRole = formatRole(role);
             MutableText roleMessage = createRoleMessage(displayRole, staffMembers);
             if (client.player != null) client.player.sendMessage(roleMessage, false);
-
-            if (staffMembers.stream().anyMatch(Staff::isUnknown)) hasUnknownPlayers = true;
         }
 
         int totalStaff = staffData.values().stream().mapToInt(List::size).sum();
         long onlineCount = staffData.values().stream()
                 .flatMap(List::stream)
-                .filter(member -> isPlayerOnline(member.getDisplayName(), client))
+                .filter(member -> playerOnline(member.name(), client))
                 .count();
 
         if (client.player != null) {
@@ -78,13 +82,9 @@ public final class StafflistCommand {
             );
         }
 
-        if (hasUnknownPlayers) {
-            if (client.player != null)
-                CommandHelper.sendError("command.worldy.stafflist.usernames_not_found");
-        }
     }
 
-    private static boolean isPlayerOnline(String playerName, MinecraftClient client) {
+    private static boolean playerOnline(String playerName, MinecraftClient client) {
         if (client.getNetworkHandler() == null) return false;
         return client.getNetworkHandler().getPlayerList().stream()
                 .anyMatch(entry -> entry.getProfile().name().equals(playerName));
@@ -105,24 +105,14 @@ public final class StafflistCommand {
     }
 
     private static MutableText createHoverablePlayerText(Staff member, MinecraftClient client) {
-        boolean isOnline = isPlayerOnline(member.getDisplayName(), client);
-        Formatting color;
+        boolean isOnline = playerOnline(member.name(), client);
+        Formatting color = isOnline ? Formatting.GREEN : Formatting.GRAY;
 
-        if (member.isUnknown()) {
-            color = Formatting.RED;
-        } else {
-            color = isOnline ? Formatting.GREEN : Formatting.GRAY;
-        }
-
-        MutableText hoverText = Text.translatable("command.worldy.stafflist.uuid", member.getUuid()).formatted(Formatting.GRAY).append("\n");
+        MutableText hoverText = Text.translatable("command.worldy.stafflist.uuid", member.uuid()).formatted(Formatting.GRAY).append("\n");
         hoverText.append(Text.translatable("command.worldy.stafflist.status").formatted(Formatting.GRAY))
                 .append(Text.translatable("command.worldy.stafflist." + (isOnline ? "online" : "offline")).formatted(isOnline ? Formatting.GREEN : Formatting.RED));
 
-        if (member.isUnknown()) {
-            hoverText.append(Text.translatable("command.worldy.stafflist.username_not_found").formatted(Formatting.RED));
-        }
-
-        String playerName = member.getDisplayName();
+        String playerName = member.name();
         String runCommand = "/res " + playerName;
 
         return Text.literal(playerName)
@@ -131,6 +121,20 @@ public final class StafflistCommand {
                         .withHoverEvent(new HoverEvent.ShowText(hoverText))
                         .withClickEvent(new ClickEvent.RunCommand(runCommand))
                 );
+    }
+
+    private static String formatRole(String role) {
+        String[] words = role.split("_");
+        StringBuilder builder = new StringBuilder();
+        for (String word : words) {
+            if (word.isEmpty()) continue;
+            if (!builder.isEmpty()) builder.append(' ');
+            builder.append(Character.toUpperCase(word.charAt(0)));
+            if (word.length() > 1) {
+                builder.append(word.substring(1));
+            }
+        }
+        return builder.toString();
     }
 
     private StafflistCommand() {}

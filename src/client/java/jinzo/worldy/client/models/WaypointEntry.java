@@ -15,8 +15,8 @@ public class WaypointEntry {
         this.world = world;
     }
 
-    public double x() {return x;}
-    public double y() {return y;}
-    public double z() {return z;}
-    public @NotNull String world() {return world;}
+    public double x() { return x; }
+    public double y() { return y; }
+    public double z() { return z; }
+    public @NotNull String world() { return world; }
 }

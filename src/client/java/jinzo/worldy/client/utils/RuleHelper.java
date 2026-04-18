@@ -23,19 +23,15 @@ public final class RuleHelper {
 
     private static volatile RuleData cachedRules;
     private static volatile Instant lastFetched = Instant.EPOCH;
-    private static volatile boolean isLoading = false;
+    private static volatile boolean loading = false;
 
     private RuleHelper() {}
 
-    public static @NotNull Optional<RuleData> getCachedRules() {
-        return Optional.ofNullable(cachedRules);
-    }
-
     public static void loadRulesAsync() {
-        if (isLoading) return;
+        if (loading) return;
         if (lastFetched.plusSeconds(60 * 5).isAfter(Instant.now()) && cachedRules != null) return;
 
-        isLoading = true;
+        loading = true;
         executor.submit(() -> {
             HttpURLConnection conn = null;
             try {
@@ -60,19 +56,19 @@ public final class RuleHelper {
                 System.err.println("Failed to fetch rules: " + e.getMessage());
             } finally {
                 if (conn != null) conn.disconnect();
-                isLoading = false;
+                loading = false;
             }
         });
     }
 
-    public static Optional<Rule> findRuleById(@NotNull String id) {
+    public static Optional<Rule> ruleById(@NotNull String id) {
         if (cachedRules == null) return Optional.empty();
         return cachedRules.rules.stream()
                 .filter(r -> r.id.equalsIgnoreCase(id))
                 .findFirst();
     }
 
-    public static List<Rule> getAllRules() {
+    public static List<Rule> allRules() {
         if (cachedRules == null) return List.of();
         return Collections.unmodifiableList(cachedRules.rules);
     }
